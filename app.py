@@ -32,6 +32,7 @@ ingredients = db.Table(
               )
 )
 
+
 # recipe table
 class Recipe(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -45,77 +46,86 @@ class Recipe(db.Model):
                                   backref=db.backref('recipes', lazy=True),
                                   )
 
+
 # ingredient table
 class Ingredient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50))
 
+
 # decorator for token verification
-def tokenRequired(func):
+def token_required(func):
     @wraps(func)
     def decorated(*args, **kwargs):
         token = None
-
         if 'token' in request.headers:
             token = request.headers['token']
-
         if not token:
-            return {'message' : 'Token is missing'}, 401
-
+            return {'message': 'Token is missing'}, 401
         try:
-            jwt.decode(token, app.config['SECRET_KEY'])
+            data = jwt.decode(token, app.config['SECRET_KEY'])
         except:
-            return {'message' : 'Token is invalid'}, 401
-
+            return {'message': 'Token is invalid'}, 401
         return func(*args, **kwargs)
+
     return decorated
 
 
-@app.route('/create-token', methods=['GET'])
-def createToken():
-    token = jwt.encode({'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=60)},
+@app.route('/login', methods=['GET'])
+def create_token():
+    auth = request.authorization
+    if not auth:
+        return {'message': 'Login required'}, 401, \
+               {'WWW-Authenticate': 'Basic realm="Login Required2"'}
+
+    token = jwt.encode({'user': auth.username, 'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=1)},
                        app.config['SECRET_KEY'])
     return {'token': token.decode('UTF-8')}
 
+
 @app.route('/verify-token', methods=['GET'])
-@tokenRequired
-def verifyToken():
+@token_required
+def verify_token():
     return {'message': 'Token is valid'}, 200
 
+
 @app.route('/recipe', methods=['GET'])
-@tokenRequired
-def getAllRecipes():
-    recipeDict = {}
+@token_required
+def get_all_recipes():
+    recipeList = []
     for recipe in Recipe.query.all():
-        recipeDict[recipe.id] = recipe.title
-    return recipeDict, 200
+        recipeList.append({'id': recipe.id,
+                           'title': recipe.title})
+    return {'recipes': recipeList}, 200
+
 
 @app.route('/ingredient', methods=['GET'])
-@tokenRequired
-def getAllIngredients():
-    ingredientDict = {}
+@token_required
+def get_all_ingredients():
+    ingredientList = []
     for ingredient in Ingredient.query.all():
-        ingredientDict[ingredient.id] = ingredient.name
-    return ingredientDict
+        ingredientList.append({'id': ingredient.id,
+                               'name': ingredient.name})
+    return {'ingredients': ingredientList}
+
 
 @app.route('/recipe/<recipe_id>', methods=['GET'])
-@tokenRequired
-def getRecipe(recipe_id):
-    selectedRecipe = Recipe.query.filter_by(id=recipe_id).first()
-    if not selectedRecipe :
-        return {'message': 'Incorrect id'}
-    ingredientList = []
-    for ingredient in selectedRecipe.ingredients:
-        ingredientList.append(ingredient.name)
+@token_required
+def get_recipe(recipe_id):
+    selected_recipe = Recipe.query.filter_by(id=recipe_id).first()
+    if not selected_recipe:
+        return {'message': 'Incorrect id'}, 401
+    ingredient_list = []
+    for ingredient in selected_recipe.ingredients:
+        ingredient_list.append(ingredient.name)
     return {
-        'title': selectedRecipe.title,
-        'durationInMinutes': selectedRecipe.durationInMinutes,
-        'description': selectedRecipe.description,
-        'ingredients': ingredientList,
-    }
+        'title': selected_recipe.title,
+        'durationInMinutes': selected_recipe.durationInMinutes,
+        'description': selected_recipe.description,
+        'ingredients': ingredient_list,
+    }, 200
 
 
 # run server
 if __name__ == "__main__":
     app.run(debug=True)
-
